@@ -472,7 +472,7 @@ export default function App() {
           <h1>Confidence Interval Simulator</h1>
           <p className="subtitle">Econ 1117 – Yale University</p>
         </div>
-        <img className="yale-logo" src="/yale_logo.png" alt="Yale University logo" />
+        <img className="yale-logo" src={import.meta.env.BASE_URL + 'yale_logo.png'} alt="Yale University logo" />
       </header>
 
       <div className="description">
