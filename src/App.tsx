@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 type Speed = 'slow' | 'medium' | 'fast';
+type ConfidenceLevel = 0.99 | 0.95 | 0.9;
 
 type IntervalRecord = {
   lower: number;
@@ -9,9 +10,10 @@ type IntervalRecord = {
   containsMu: boolean;
 };
 
-type SamplePoint = {
+type DotPoint = {
   x: number;
-  jitter: number;
+  jitterX: number;
+  jitterY: number;
 };
 
 const NPOP = 10_000;
@@ -22,47 +24,63 @@ const SPEED_MS: Record<Speed, number> = {
   fast: 120,
 };
 
-const distribution: Array<{ value: number; p: number }> = [
-  { value: 0, p: 0.14 },
-  { value: 1, p: 0.24 },
-  { value: 2, p: 0.24 },
-  { value: 3, p: 0.18 },
-  { value: 4, p: 0.1 },
-  { value: 5, p: 0.06 },
-  { value: 6, p: 0.03 },
-  { value: 7, p: 0.008 },
-  { value: 8, p: 0.002 },
+const siblingDistribution: Array<{ value: number; p: number }> = [
+  { value: 0, p: 0.21 },
+  { value: 1, p: 0.39 },
+  { value: 2, p: 0.25 },
+  { value: 3, p: 0.1 },
+  { value: 4, p: 0.035 },
+  { value: 5, p: 0.015 },
 ];
 
 function generatePopulation(size: number): number[] {
+  const generateOnce = () => {
+    const pop: number[] = new Array(size);
+    for (let i = 0; i < size; i += 1) {
+      const r = Math.random();
+      let picked = cumulative[cumulative.length - 1].value;
+      for (const c of cumulative) {
+        if (r <= c.cdf) {
+          picked = c.value;
+          break;
+        }
+      }
+      pop[i] = picked;
+    }
+    return pop;
+  };
+
   const cumulative: Array<{ value: number; cdf: number }> = [];
   let running = 0;
-  for (const d of distribution) {
+  for (const d of siblingDistribution) {
     running += d.p;
     cumulative.push({ value: d.value, cdf: running });
   }
 
-  const pop: number[] = new Array(size);
-  for (let i = 0; i < size; i += 1) {
-    const r = Math.random();
-    let picked = cumulative[cumulative.length - 1].value;
-    for (const c of cumulative) {
-      if (r <= c.cdf) {
-        picked = c.value;
-        break;
-      }
+  const targetMu = 1.4;
+  const tolerance = 0.02;
+  let best = generateOnce();
+  let bestGap = Math.abs(mean(best) - targetMu);
+
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    if (bestGap <= tolerance) break;
+    const candidate = generateOnce();
+    const gap = Math.abs(mean(candidate) - targetMu);
+    if (gap < bestGap) {
+      best = candidate;
+      bestGap = gap;
     }
-    pop[i] = picked;
   }
-  return pop;
+
+  return best;
 }
 
-function sampleWithoutReplacement(population: number[], n: number): number[] {
+function sampleIndicesWithoutReplacement(populationSize: number, n: number): number[] {
   const picked = new Set<number>();
   while (picked.size < n) {
-    picked.add(Math.floor(Math.random() * population.length));
+    picked.add(Math.floor(Math.random() * populationSize));
   }
-  return Array.from(picked, (idx) => population[idx]);
+  return Array.from(picked);
 }
 
 function mean(values: number[]): number {
@@ -142,9 +160,11 @@ function inverseNormalCdf(p: number): number {
   );
 }
 
-function tCritical95(df: number): number {
-  if (df <= 0) return 1.96;
-  const z = inverseNormalCdf(0.975);
+function tCriticalForLevel(df: number, level: number): number {
+  const alpha = 1 - level;
+  const p = 1 - alpha / 2;
+  const z = inverseNormalCdf(p);
+  if (df <= 0) return z;
   const z2 = z * z;
   const z3 = z2 * z;
   const z5 = z3 * z2;
@@ -159,11 +179,17 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
+function stableUnitNoise(seed: number): number {
+  const x = Math.sin(seed * 12.9898) * 43758.5453123;
+  return x - Math.floor(x);
+}
+
 export default function App() {
   const [population] = useState<number[]>(() => generatePopulation(NPOP));
   const [sampleSize, setSampleSize] = useState(100);
   const [targetRepetitions, setTargetRepetitions] = useState(100);
   const [speed, setSpeed] = useState<Speed>('medium');
+  const [confidenceLevel, setConfidenceLevel] = useState<ConfidenceLevel>(0.95);
   const [showPopulationDots, setShowPopulationDots] = useState(true);
   const [showCurrentSample, setShowCurrentSample] = useState(true);
   const [freezeAfterOne, setFreezeAfterOne] = useState(false);
@@ -171,7 +197,7 @@ export default function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [intervals, setIntervals] = useState<IntervalRecord[]>([]);
   const [containsCount, setContainsCount] = useState(0);
-  const [currentSample, setCurrentSample] = useState<SamplePoint[]>([]);
+  const [currentSample, setCurrentSample] = useState<DotPoint[]>([]);
   const [currentInterval, setCurrentInterval] = useState<IntervalRecord | null>(null);
 
   const topCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -183,9 +209,13 @@ export default function App() {
 
   const populationDots = useMemo(() => {
     const stride = Math.max(1, Math.floor(population.length / MAX_POP_DOTS));
-    const points: SamplePoint[] = [];
+    const points: DotPoint[] = [];
     for (let i = 0; i < population.length; i += stride) {
-      points.push({ x: population[i], jitter: ((i * 37) % 25) - 12 });
+      points.push({
+        x: population[i],
+        jitterX: (stableUnitNoise(i + 11) - 0.5) * 0.36,
+        jitterY: stableUnitNoise(i + 97),
+      });
     }
     return points;
   }, [population]);
@@ -206,11 +236,12 @@ export default function App() {
       return;
     }
 
-    const sample = sampleWithoutReplacement(population, sampleSize);
+    const sampledIndices = sampleIndicesWithoutReplacement(population.length, sampleSize);
+    const sample = sampledIndices.map((idx) => population[idx]);
     const xbar = mean(sample);
     const s = sampleStd(sample, xbar);
     const se = s / Math.sqrt(sampleSize);
-    const tcrit = tCritical95(sampleSize - 1);
+    const tcrit = tCriticalForLevel(sampleSize - 1, confidenceLevel);
     const margin = tcrit * se;
     const lower = xbar - margin;
     const upper = xbar + margin;
@@ -218,9 +249,10 @@ export default function App() {
 
     const newInterval: IntervalRecord = { lower, upper, mean: xbar, containsMu };
 
-    const sampledPoints = sample.map((value, idx) => ({
-      x: value,
-      jitter: ((idx * 29) % 35) - 17,
+    const sampledPoints = sampledIndices.map((idx) => ({
+      x: population[idx],
+      jitterX: (stableUnitNoise(idx + 11) - 0.5) * 0.36,
+      jitterY: stableUnitNoise(idx + 97),
     }));
 
     setCurrentSample(sampledPoints);
@@ -231,7 +263,15 @@ export default function App() {
     if (freezeAfterOne) {
       setIsRunning(false);
     }
-  }, [freezeAfterOne, intervals.length, mu, population, sampleSize, targetRepetitions]);
+  }, [confidenceLevel, freezeAfterOne, intervals.length, mu, population, sampleSize, targetRepetitions]);
+
+  useEffect(() => {
+    setIsRunning(false);
+    setIntervals([]);
+    setContainsCount(0);
+    setCurrentSample([]);
+    setCurrentInterval(null);
+  }, [confidenceLevel]);
 
   useEffect(() => {
     if (!isRunning) return;
@@ -281,23 +321,28 @@ export default function App() {
     }
 
     if (showPopulationDots) {
-      ctx.fillStyle = 'rgba(107,114,128,0.28)';
+      ctx.fillStyle = 'rgba(107,114,128,0.42)';
       for (const p of populationDots) {
-        const x = mapX(p.x);
-        const y = axisY - 10 + p.jitter * 0.4;
+        const x = mapX(p.x + p.jitterX);
+        const y = axisY - 8 - p.jitterY * 90;
         ctx.beginPath();
-        ctx.arc(x, y, 1.7, 0, Math.PI * 2);
+        ctx.arc(x, y, 2.1, 0, Math.PI * 2);
         ctx.fill();
       }
     }
 
     if (showCurrentSample && currentSample.length > 0) {
-      ctx.fillStyle = 'rgba(37,99,235,0.75)';
       for (const p of currentSample) {
-        const x = mapX(p.x);
-        const y = axisY - 18 + p.jitter * 0.35;
+        const x = mapX(p.x + p.jitterX);
+        const y = axisY - 8 - p.jitterY * 90;
+        ctx.strokeStyle = 'rgba(239,246,255,0.95)';
+        ctx.lineWidth = 1.1;
         ctx.beginPath();
-        ctx.arc(x, y, 2.1, 0, Math.PI * 2);
+        ctx.arc(x, y, 3.3, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(37,99,235,0.92)';
+        ctx.beginPath();
+        ctx.arc(x, y, 2.7, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -422,18 +467,37 @@ export default function App() {
 
   return (
     <div className="app">
-      <h1>Frequentist 95% CI Simulator</h1>
-      <p className="subtitle">
-        The red line (mu) is fixed. The intervals vary by sample.
-      </p>
+      <header className="app-header">
+        <div>
+          <h1>Confidence Interval Simulator</h1>
+          <p className="subtitle">Econ 1117 – Yale University</p>
+        </div>
+        <img className="yale-logo" src="/yale_logo.png" alt="Yale University logo" />
+      </header>
+
+      <div className="description">
+        <p>This simulator demonstrates the interpretation of confidence intervals.</p>
+        <p>
+          We consider a (ficticious) population of Yale students and the random variable “number of siblings.” The gray
+          dots represent the full population. The true population mean is fixed at μ = 1.4, indicated by the red
+          vertical line.
+        </p>
+        <p>
+          In each repetition, a random sample (blue dots) is drawn, the sample mean is computed, and a confidence
+          interval is constructed. Because the sample changes from iteration to iteration, the interval changes as
+          well. Over many repetitions, a (1-α)% confidence procedure captures the true mean about (1-α)% of the time.
+        </p>
+      </div>
 
       <div className="explanation">
         {intervals.length === 0
-          ? 'We will repeat: sample -> compute CI. mu is fixed; the CI is random before you compute it.'
-          : 'In repeated samples, about 95% of 95% CIs contain mu.'}
+          ? 'We will repeat: sample -> compute CI. μ is fixed; the CI is random before you compute it.'
+          : `In repeated samples, about ${(confidenceLevel * 100).toFixed(0)}% of ${(confidenceLevel * 100).toFixed(
+              0
+            )}% CIs contain μ.`}
       </div>
       <div className="warning">
-        After you compute one CI, it either contains mu or not; no probability remains for that specific interval (frequentist view).
+        After you compute one CI, it either contains μ or not.
       </div>
 
       <div className="controls">
@@ -467,6 +531,18 @@ export default function App() {
             <option value="slow">Slow</option>
             <option value="medium">Medium</option>
             <option value="fast">Fast</option>
+          </select>
+        </label>
+
+        <label>
+          Confidence level
+          <select
+            value={String(confidenceLevel)}
+            onChange={(e) => setConfidenceLevel(Number(e.target.value) as ConfidenceLevel)}
+          >
+            <option value="0.99">99%</option>
+            <option value="0.95">95%</option>
+            <option value="0.9">90%</option>
           </select>
         </label>
 
@@ -513,7 +589,7 @@ export default function App() {
 
       <div className="stats">
         <div>Population size: {NPOP.toLocaleString()}</div>
-        <div>True mean mu: {mu.toFixed(3)}</div>
+        <div>True mean μ: {mu.toFixed(3)}</div>
         <div>Intervals drawn: {intervals.length}</div>
         <div>
           Coverage so far: {(coverage * 100).toFixed(1)}% ({containsCount}/{intervals.length || 0})
@@ -526,7 +602,7 @@ export default function App() {
       </section>
 
       <section className="panel">
-        <h2>Repeated 95% Confidence Intervals</h2>
+        <h2>Repeated {(confidenceLevel * 100).toFixed(0)}% Confidence Intervals</h2>
         <canvas ref={bottomCanvasRef} width={980} height={460} />
       </section>
     </div>

@@ -19,20 +19,53 @@ body {
   padding: 18px;
 }
 
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #00356b;
+}
+
 h1 {
   margin: 0 0 4px;
-  font-size: 1.6rem;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #00356b;
 }
 
 .subtitle {
-  margin: 0 0 14px;
-  color: #374151;
+  margin: 0;
+  color: #334155;
+  font-size: 0.95rem;
+}
+
+.yale-logo {
+  height: 44px;
+  width: auto;
+  object-fit: contain;
+}
+
+.description {
+  margin: 0 0 12px;
+  color: #1f2937;
+  line-height: 1.45;
+}
+
+.description p {
+  margin: 0 0 10px;
+}
+
+.description p:last-child {
+  margin-bottom: 0;
 }
 
 .explanation {
   padding: 10px 12px;
   background: #eff6ff;
-  border: 1px solid #bfdbfe;
+  border: 1px solid #bcd2eb;
   border-radius: 8px;
   margin-bottom: 8px;
 }
@@ -119,6 +152,7 @@ button:disabled {
 h2 {
   margin: 0 0 8px;
   font-size: 1.05rem;
+  color: #00356b;
 }
 
 canvas {
@@ -131,6 +165,14 @@ canvas {
 @media (max-width: 640px) {
   .app {
     padding: 12px;
+  }
+
+  .app-header {
+    align-items: flex-start;
+  }
+
+  .yale-logo {
+    height: 36px;
   }
 
   .check {
