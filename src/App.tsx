@@ -18,6 +18,9 @@ type DotPoint = {
 
 const NPOP = 10_000;
 const MAX_POP_DOTS = 2_000;
+const DOT_JITTER_X_HALF_RANGE = 0.18;
+const TOP_DOT_MAX_RADIUS_PX = 3.3;
+const TOP_PLOT_RIGHT_PAD_PX = Math.ceil(TOP_DOT_MAX_RADIUS_PX + 2);
 const SPEED_MS: Record<Speed, number> = {
   slow: 900,
   medium: 350,
@@ -184,6 +187,27 @@ function stableUnitNoise(seed: number): number {
   return x - Math.floor(x);
 }
 
+function setupHiDpiCanvas(canvas: HTMLCanvasElement) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const fallbackWidth = Number(canvas.getAttribute('width')) || 1;
+  const fallbackHeight = Number(canvas.getAttribute('height')) || 1;
+  const cssWidth = Math.max(1, canvas.clientWidth || fallbackWidth);
+  const cssHeight = Math.max(1, canvas.clientHeight || fallbackHeight);
+  const dpr = window.devicePixelRatio || 1;
+  const pixelWidth = Math.max(1, Math.round(cssWidth * dpr));
+  const pixelHeight = Math.max(1, Math.round(cssHeight * dpr));
+
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+  }
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, width: cssWidth, height: cssHeight };
+}
+
 export default function App() {
   const [population] = useState<number[]>(() => generatePopulation(NPOP));
   const [sampleSize, setSampleSize] = useState(100);
@@ -284,17 +308,20 @@ export default function App() {
   useEffect(() => {
     const canvas = topCanvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const setup = setupHiDpiCanvas(canvas);
+    if (!setup) return;
+    const { ctx, width, height } = setup;
 
-    const width = canvas.width;
-    const height = canvas.height;
     const margin = { left: 54, right: 20, top: 20, bottom: 38 };
     const axisY = height - margin.bottom;
+    const plotLeft = margin.left;
+    const plotRight = width - margin.right - TOP_PLOT_RIGHT_PAD_PX;
+    const domainMin = xMin;
+    const domainMax = xMax + DOT_JITTER_X_HALF_RANGE;
 
     const mapX = (v: number) => {
-      const frac = (v - xMin) / (xMax - xMin || 1);
-      return margin.left + frac * (width - margin.left - margin.right);
+      const frac = (v - domainMin) / (domainMax - domainMin || 1);
+      return plotLeft + frac * (plotRight - plotLeft);
     };
 
     ctx.clearRect(0, 0, width, height);
@@ -304,8 +331,8 @@ export default function App() {
     ctx.strokeStyle = '#d0d7de';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(margin.left, axisY);
-    ctx.lineTo(width - margin.right, axisY);
+    ctx.moveTo(plotLeft, axisY);
+    ctx.lineTo(plotRight, axisY);
     ctx.stroke();
 
     ctx.fillStyle = '#4b5563';
@@ -375,17 +402,16 @@ export default function App() {
 
     ctx.fillStyle = '#dc2626';
     ctx.font = 'bold 12px sans-serif';
-    ctx.fillText('\u03bc (true mean)', clamp(muX - 42, margin.left, width - margin.right - 85), margin.top + 12);
+    ctx.fillText('\u03bc (true mean)', clamp(muX - 42, plotLeft, plotRight - 85), margin.top + 12);
   }, [currentInterval, currentSample, mu, populationDots, showCurrentSample, showPopulationDots, xMax, xMin]);
 
   useEffect(() => {
     const canvas = bottomCanvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const setup = setupHiDpiCanvas(canvas);
+    if (!setup) return;
+    const { ctx, width, height } = setup;
 
-    const width = canvas.width;
-    const height = canvas.height;
     const margin = { left: 54, right: 20, top: 16, bottom: 34 };
     const drawableH = height - margin.top - margin.bottom;
     const rowH = drawableH / Math.max(1, targetRepetitions);
@@ -476,28 +502,27 @@ export default function App() {
       </header>
 
       <div className="description">
-        <p>This simulator demonstrates the interpretation of confidence intervals.</p>
-        <p>
-          We consider a (ficticious) population of Yale students and the random variable “number of siblings.” The gray
-          dots represent the full population. The true population mean is fixed at μ = 1.4, indicated by the red
-          vertical line.
+       <p>
+          This simulator illustrates how to interpret confidence intervals.
         </p>
-        <p>
-          In each repetition, a random sample (blue dots) is drawn, the sample mean is computed, and a confidence
-          interval is constructed. Because the sample changes from iteration to iteration, the interval changes as
-          well. Over many repetitions, a (1-α)% confidence procedure captures the true mean about (1-α)% of the time.
-        </p>
-      </div>
 
-      <div className="explanation">
-        {intervals.length === 0
-          ? 'We will repeat: sample -> compute CI. μ is fixed; the CI is random before you compute it.'
-          : `In repeated samples, about ${(confidenceLevel * 100).toFixed(0)}% of ${(confidenceLevel * 100).toFixed(
-              0
-            )}% CIs contain μ.`}
-      </div>
-      <div className="warning">
-        After you compute one CI, it either contains μ or not.
+        <p>
+          Consider the population of Yale students. Let X denote the number of siblings of a randomly selected student. 
+          The population mean is μ = 1.4 (that is, E[X] = μ = 1.4). 
+          This value is fixed and does not change.
+        </p>
+
+        <p>
+          The first panel below shows the population distribution of X, represented by the gray circles. 
+          The red vertical line marks the true mean μ.
+        </p>
+
+        <p>
+          The simulation repeatedly draws random samples from this population. 
+          In each repetition, a sample (blue dots) is drawn, the sample mean is computed, and a confidence interval is constructed. 
+          Because the sample changes from one repetition to the next, the interval changes as well. 
+          Over many repetitions, a (1−α)% confidence procedure captures the true mean approximately (1−α)% of the time.
+        </p>
       </div>
 
       <div className="controls">
@@ -589,7 +614,7 @@ export default function App() {
 
       <div className="stats">
         <div>Population size: {NPOP.toLocaleString()}</div>
-        <div>True mean μ: {mu.toFixed(3)}</div>
+        <div>True mean μ: 1.4</div>
         <div>Intervals drawn: {intervals.length}</div>
         <div>
           Coverage so far: {(coverage * 100).toFixed(1)}% ({containsCount}/{intervals.length || 0})
@@ -598,12 +623,16 @@ export default function App() {
 
       <section className="panel">
         <h2>Population Axis and Current Draw</h2>
-        <canvas ref={topCanvasRef} width={980} height={220} />
+        <div className="chart-wrap chart-wrap-top">
+          <canvas ref={topCanvasRef} width={980} height={220} />
+        </div>
       </section>
 
       <section className="panel">
         <h2>Repeated {(confidenceLevel * 100).toFixed(0)}% Confidence Intervals</h2>
-        <canvas ref={bottomCanvasRef} width={980} height={460} />
+        <div className="chart-wrap chart-wrap-bottom">
+          <canvas ref={bottomCanvasRef} width={980} height={460} />
+        </div>
       </section>
     </div>
   );

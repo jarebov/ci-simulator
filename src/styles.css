@@ -43,9 +43,10 @@ h1 {
 }
 
 .yale-logo {
-  height: 44px;
+  height: 86px;
   width: auto;
   object-fit: contain;
+  flex-shrink: 0;
 }
 
 .description {
@@ -60,22 +61,6 @@ h1 {
 
 .description p:last-child {
   margin-bottom: 0;
-}
-
-.explanation {
-  padding: 10px 12px;
-  background: #eff6ff;
-  border: 1px solid #bcd2eb;
-  border-radius: 8px;
-  margin-bottom: 8px;
-}
-
-.warning {
-  padding: 10px 12px;
-  background: #fff7ed;
-  border: 1px solid #fed7aa;
-  border-radius: 8px;
-  margin-bottom: 12px;
 }
 
 .controls {
@@ -117,6 +102,7 @@ button {
   align-items: flex-end;
   gap: 8px;
   margin-top: 4px;
+  flex-wrap: wrap;
 }
 
 button {
@@ -149,6 +135,19 @@ button:disabled {
   background: #ffffff;
 }
 
+.chart-wrap {
+  width: 100%;
+  max-width: 980px;
+}
+
+.chart-wrap-top {
+  height: 220px;
+}
+
+.chart-wrap-bottom {
+  height: 460px;
+}
+
 h2 {
   margin: 0 0 8px;
   font-size: 1.05rem;
@@ -158,7 +157,7 @@ h2 {
 canvas {
   display: block;
   width: 100%;
-  max-width: 980px;
+  height: 100%;
   border: 1px solid #f1f5f9;
 }
 
@@ -168,11 +167,11 @@ canvas {
   }
 
   .app-header {
-    align-items: flex-start;
+    align-items: center;
   }
 
   .yale-logo {
-    height: 36px;
+    height: 64px;
   }
 
   .check {
