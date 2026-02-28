@@ -634,6 +634,18 @@ export default function App() {
           <canvas ref={bottomCanvasRef} width={980} height={460} />
         </div>
       </section>
+
+      <footer className="footer-credit">
+        Interactive CI visualization by{' '}
+        <a
+          href="https://www.jarellanobover.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Open Jaime Arellano-Bover’s website in a new tab"
+        >
+          Jaime Arellano-Bover
+        </a>
+      </footer>
     </div>
   );
 }
