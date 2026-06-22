@@ -84,6 +84,12 @@ label {
   font-size: 0.95rem;
 }
 
+.label-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+
 .check {
   flex-direction: row;
   align-items: center;
@@ -98,6 +104,14 @@ input[type='range'] {
 select,
 button {
   font-size: 0.95rem;
+}
+
+.math-inline {
+  white-space: nowrap;
+}
+
+.math-inline .katex {
+  font-size: 1em;
 }
 
 .buttons {

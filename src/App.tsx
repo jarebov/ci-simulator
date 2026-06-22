@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 
 type Speed = 'slow' | 'medium' | 'fast';
 type ConfidenceLevel = 0.99 | 0.95 | 0.9;
@@ -16,11 +18,18 @@ type DotPoint = {
   jitterY: number;
 };
 
+type MathInlineProps = {
+  tex: string;
+};
+
 const NPOP = 10_000;
 const MAX_POP_DOTS = 2_000;
 const DOT_JITTER_X_HALF_RANGE = 0.18;
 const TOP_DOT_MAX_RADIUS_PX = 3.3;
 const TOP_PLOT_RIGHT_PAD_PX = Math.ceil(TOP_DOT_MAX_RADIUS_PX + 2);
+const SAMPLE_BLUE = '#0072b2';
+const POPULATION_ORANGE = '#d55e00';
+const MISS_ALERT = '#c81e5b';
 const SPEED_MS: Record<Speed, number> = {
   slow: 900,
   medium: 350,
@@ -35,6 +44,20 @@ const siblingDistribution: Array<{ value: number; p: number }> = [
   { value: 4, p: 0.035 },
   { value: 5, p: 0.015 },
 ];
+
+function MathInline({ tex }: MathInlineProps) {
+  return (
+    <span
+      className="math-inline"
+      dangerouslySetInnerHTML={{
+        __html: katex.renderToString(tex, {
+          displayMode: false,
+          throwOnError: false,
+        }),
+      }}
+    />
+  );
+}
 
 function generatePopulation(size: number): number[] {
   const generateOnce = () => {
@@ -367,7 +390,7 @@ export default function App() {
         ctx.beginPath();
         ctx.arc(x, y, 3.3, 0, Math.PI * 2);
         ctx.stroke();
-        ctx.fillStyle = 'rgba(37,99,235,0.92)';
+        ctx.fillStyle = SAMPLE_BLUE;
         ctx.beginPath();
         ctx.arc(x, y, 2.7, 0, Math.PI * 2);
         ctx.fill();
@@ -376,14 +399,14 @@ export default function App() {
 
     if (currentInterval) {
       const y = margin.top + 24;
-      ctx.strokeStyle = '#2563eb';
+      ctx.strokeStyle = SAMPLE_BLUE;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.moveTo(mapX(currentInterval.lower), y);
       ctx.lineTo(mapX(currentInterval.upper), y);
       ctx.stroke();
 
-      ctx.strokeStyle = '#1d4ed8';
+      ctx.strokeStyle = SAMPLE_BLUE;
       ctx.lineWidth = 2;
       const meanX = mapX(currentInterval.mean);
       ctx.beginPath();
@@ -393,14 +416,14 @@ export default function App() {
     }
 
     const muX = mapX(mu);
-    ctx.strokeStyle = '#dc2626';
+    ctx.strokeStyle = POPULATION_ORANGE;
     ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.moveTo(muX, margin.top);
     ctx.lineTo(muX, axisY + 3);
     ctx.stroke();
 
-    ctx.fillStyle = '#dc2626';
+    ctx.fillStyle = POPULATION_ORANGE;
     ctx.font = 'bold 12px sans-serif';
     ctx.fillText('\u03bc (true mean)', clamp(muX - 42, plotLeft, plotRight - 85), margin.top + 12);
   }, [currentInterval, currentSample, mu, populationDots, showCurrentSample, showPopulationDots, xMax, xMin]);
@@ -426,7 +449,7 @@ export default function App() {
     ctx.fillRect(0, 0, width, height);
 
     const muX = mapX(mu);
-    ctx.strokeStyle = '#dc2626';
+    ctx.strokeStyle = POPULATION_ORANGE;
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(muX, margin.top);
@@ -436,7 +459,7 @@ export default function App() {
     for (let i = 0; i < intervals.length; i += 1) {
       const iv = intervals[i];
       const y = margin.top + (i + 0.5) * rowH;
-      ctx.strokeStyle = iv.containsMu ? '#16a34a' : '#ef4444';
+      ctx.strokeStyle = iv.containsMu ? SAMPLE_BLUE : MISS_ALERT;
       ctx.lineWidth = rowH > 3 ? 2 : 1;
       ctx.beginPath();
       ctx.moveTo(mapX(iv.lower), y);
@@ -507,27 +530,31 @@ export default function App() {
         </p>
 
         <p>
-          Consider the population of Yale students. Let X denote the number of siblings of a randomly selected student. 
-          The population mean is μ = 1.4 (that is, E[X] = μ = 1.4). 
+          Consider the population of Yale students. Let <MathInline tex={'X'} /> denote the number of siblings of a randomly selected student. 
+          The population mean is <MathInline tex={'\\mu = 1.4'} /> (that is,{' '}
+          <MathInline tex={'E[X] = \\mu = 1.4'} />). 
           This value is fixed and does not change.
         </p>
 
         <p>
-          The first panel below shows the population distribution of X, represented by the gray circles. 
-          The red vertical line marks the true mean μ.
+          The first panel below shows the population distribution of <MathInline tex={'X'} />, represented by the gray circles. 
+          The orange vertical line marks the true mean <MathInline tex={'\\mu'} />.
         </p>
 
         <p>
           The simulation repeatedly draws random samples from this population. 
-          In each repetition, a sample (blue dots) is drawn, the sample mean is computed, and a confidence interval is constructed. 
+          In each repetition, a sample (blue dots) is drawn, the sample mean <MathInline tex={'\\bar X'} /> is computed, and a confidence interval is constructed. 
           Because the sample changes from one repetition to the next, the interval changes as well. 
-          Over many repetitions, a (1−α)% confidence procedure captures the true mean approximately (1−α)% of the time.
+          Over many repetitions, a <MathInline tex={'(1-\\alpha)\\%'} /> confidence procedure captures the true mean
+          approximately <MathInline tex={'(1-\\alpha)\\%'} /> of the time.
         </p>
       </div>
 
       <div className="controls">
         <label>
-          Sample size n: <strong>{sampleSize}</strong>
+          <span className="label-line">
+            Sample size <MathInline tex={'N'} />: <strong>{sampleSize}</strong>
+          </span>
           <input
             type="range"
             min={10}
@@ -606,7 +633,7 @@ export default function App() {
             Pause
           </button>
           <button onClick={handleStep} disabled={intervals.length >= targetRepetitions}>
-            Step
+            Draw
           </button>
           <button onClick={handleReset}>Reset</button>
         </div>
@@ -614,7 +641,9 @@ export default function App() {
 
       <div className="stats">
         <div>Population size: {NPOP.toLocaleString()}</div>
-        <div>True mean μ: 1.4</div>
+        <div>
+          True mean <MathInline tex={'\\mu'} />: 1.4
+        </div>
         <div>Intervals drawn: {intervals.length}</div>
         <div>
           Coverage so far: {(coverage * 100).toFixed(1)}% ({containsCount}/{intervals.length || 0})
